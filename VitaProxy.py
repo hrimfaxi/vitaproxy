@@ -28,6 +28,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     rbufsize = 0                        # self.rfile Be unbuffered
     enable_psv_fix = 1
     expert_mode = 0
+    bufsize = 65536
+    show_speed = 1
+    update_interval = 3
 
     def handle(self):
         (ip, port) =  self.client_address
@@ -60,18 +63,11 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         last_http = self.path.rfind("http://")
 
         if last_http != 0 and last_http != -1:
-            self.server.logger.log(logging.DEBUG, "fixing path %s", self.path)
+            if self.expert_mode:
+                self.server.logger.log(logging.DEBUG, "fixing path %s", self.path)
             self.path =  self.path[last_http:]
 
     def do_CONNECT(self):
-        self.fix_path()
-
-        if self.expert_mode:
-            self.log_message("%s", self.path)
-        else:
-            if ".pkg" in self.path:
-                self.log_message("%s", self.path)
-        
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
@@ -81,7 +77,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 self._read_write(soc, 300)
         finally:
             soc.close()
-            self.connection.close()
 
     def get_file_length(self, fn):
         return os.stat(fn).st_size
@@ -210,72 +205,58 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             soc.close()
 
     def _file_read_write(self, fd, start, end):
-        try:
-            count = 0
-            max_count = end - start + 1
-            rest = max_count - count
+        count = 0
+        max_count = end - start + 1
+        rest = max_count - count
+
+        if self.show_speed:
             tm_a = [time.time(), count]
             tm_b = [time.time(), count]
-            delay = 0
 
-            fd.seek(start)
+        fd.seek(start)
 
-            while rest > 0:
-                data = fd.read(min(8192, rest))
+        while rest > 0:
+            data = fd.read(min(self.bufsize, rest))
 #           self.server.logger.log(logging.DEBUG, "read %d bytes" %(len(data)))
 
+            if not data:
+                break
 
-                if not data:
-                    break
+            count += len(data)
+            rest -= len(data)
+            self.connection.send(data)
 
-                count += len(data)
-                rest -= len(data)
-                self.connection.send(data)
-
+            if self.show_speed:
                 tm_b = [time.time(), count]
                 delta = tm_b[0] - tm_a[0]
 
-                if delay >= 800 and delta >= 10.0:
+                if delta >= self.update_interval:
                     speed = (tm_b[1] - tm_a[1]) / delta
                     self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
                     self.log_message("ETA: %d seconds" % (rest / speed))
                     tm_a = tm_b
-                    delay = 0
-                else:
-                    delay += 1
-        except socket.error as e:
-            if e.errno == 10054:
-                print ("Connection reset by peer")
-            else:
-                print (str(e))
 
     def _read_write(self, soc, max_idling=20, local=False):
-        try:
-            iw = [self.connection, soc]
-            local_data = ""
-            ow = []
-            count = 0
-            while 1:
-                count += 1
-                (ins, _, exs) = select.select(iw, ow, iw, 1)
-                if exs: break
-                if ins:
-                    for i in ins:
-                        if i is soc: out = self.connection
-                        else: out = soc
-                        data = i.recv(8192)
-                        if data:
-                            if local: local_data += data
-                            else: out.send(data)
-                            count = 0
-                if count == max_idling: break
-            if local: return local_data
-            return None
-        except socket.error as e:
-            if e.errno == 10054:
-                print ("Connection reset by peer")
-            else:
-                print (str(e))
+        iw = [self.connection, soc]
+        local_data = ""
+        ow = []
+        count = 0
+        while 1:
+            count += 1
+            (ins, _, exs) = select.select(iw, ow, iw, 1)
+            if exs: break
+            if ins:
+                for i in ins:
+                    if i is soc: out = self.connection
+                    else: out = soc
+                    data = i.recv(self.bufsize)
+                    if data:
+                        if local: local_data += data
+                        else: out.send(data)
+                        count = 0
+            if count == max_idling: break
+        if local: return local_data
+        return None
 
     do_HEAD = do_GET
     do_POST = do_GET
@@ -450,6 +431,12 @@ def main ():
             if e[0] == 4 and run_event.isSet (): pass
             else:
                 logger.log (logging.CRITICAL, "Errno: %d - %s", e[0], e[1])
+        except socket.error as e:
+            if e.errno == 10054:
+                print ("Connection reset by peer")
+            else:
+                print (str(e))
+                
     logger.log (logging.INFO, "Server shutdown")
     return 0
 
