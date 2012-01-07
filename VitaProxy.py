@@ -142,7 +142,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.write("\r\n")
         self.server.logger.log(logging.DEBUG, "Range: from %d to %d", start, end)
 
-        with open(replace_list, "rb") as fd:
+        with open(replace_fn, "rb") as fd:
             self._file_read_write(fd, start, end)
 
     def do_GET(self):
