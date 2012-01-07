@@ -209,60 +209,72 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             self.connection.close()
 
     def _file_read_write(self, fd, start, end):
-        count = 0
-        max_count = end - start + 1
-        rest = max_count - count
-        tm_a = [time.time(), count]
-        tm_b = [time.time(), count]
-        delay = 0
+        try:
+            count = 0
+            max_count = end - start + 1
+            rest = max_count - count
+            tm_a = [time.time(), count]
+            tm_b = [time.time(), count]
+            delay = 0
 
-        fd.seek(start)
+            fd.seek(start)
 
-        while rest > 0:
-            data = fd.read(min(8192, rest))
+            while rest > 0:
+                data = fd.read(min(8192, rest))
 #           self.server.logger.log(logging.DEBUG, "read %d bytes" %(len(data)))
 
 
-            if not data:
-                break
+                if not data:
+                    break
 
-            count += len(data)
-            rest -= len(data)
-            self.connection.send(data)
+                count += len(data)
+                rest -= len(data)
+                self.connection.send(data)
 
-            tm_b = [time.time(), count]
-            delta = tm_b[0] - tm_a[0]
+                tm_b = [time.time(), count]
+                delta = tm_b[0] - tm_a[0]
 
-            if delay >= 800 and delta >= 10.0:
-                speed = (tm_b[1] - tm_a[1]) / delta
-                self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
-                self.log_message("ETA: %d seconds" % (rest / speed))
-                tm_a = tm_b
-                delay = 0
+                if delay >= 800 and delta >= 10.0:
+                    speed = (tm_b[1] - tm_a[1]) / delta
+                    self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
+                    self.log_message("ETA: %d seconds" % (rest / speed))
+                    tm_a = tm_b
+                    delay = 0
+                else:
+                    delay += 1
+        except socket.error as e:
+            if e.errno == 10054:
+                print ("Connection reset by peer")
             else:
-                delay += 1
+                print (str(e))
 
     def _read_write(self, soc, max_idling=20, local=False):
-        iw = [self.connection, soc]
-        local_data = ""
-        ow = []
-        count = 0
-        while 1:
-            count += 1
-            (ins, _, exs) = select.select(iw, ow, iw, 1)
-            if exs: break
-            if ins:
-                for i in ins:
-                    if i is soc: out = self.connection
-                    else: out = soc
-                    data = i.recv(8192)
-                    if data:
-                        if local: local_data += data
-                        else: out.send(data)
-                        count = 0
-            if count == max_idling: break
-        if local: return local_data
-        return None
+        try:
+            iw = [self.connection, soc]
+            local_data = ""
+            ow = []
+            count = 0
+            while 1:
+                count += 1
+                (ins, _, exs) = select.select(iw, ow, iw, 1)
+                if exs: break
+                if ins:
+                    for i in ins:
+                        if i is soc: out = self.connection
+                        else: out = soc
+                        data = i.recv(8192)
+                        if data:
+                            if local: local_data += data
+                            else: out.send(data)
+                            count = 0
+                if count == max_idling: break
+            if local: return local_data
+            return None
+        except socket.error as e:
+            if e.errno == 10054:
+                print ("Connection reset by peer")
+            else:
+                print (str(e))
 
     do_HEAD = do_GET
     do_POST = do_GET
