@@ -2,7 +2,7 @@
 
 __version__ = "0.0.0"
 
-import time
+import time, datetime
 import BaseHTTPServer, select, socket, SocketServer, urlparse
 import logging
 import logging.handlers
@@ -24,7 +24,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     __base = BaseHTTPServer.BaseHTTPRequestHandler
     __base_handle = __base.handle
 
-    server_version = "VitaProxy/" + __version__
+    server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
     enable_psv_fix = 1
     expert_mode = 0
@@ -76,10 +76,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         try:
             if self._connect_to(self.path, soc):
-                self.wfile.write(self.protocol_version +
-                                 " 200 Connection established\r\n")
-                self.wfile.write("Proxy-agent: %s\r\n" % self.version_string())
-                self.wfile.write("\r\n")
+                self.send_response(200, "OK")
+                self.end_headers()
                 self._read_write(soc, 300)
         finally:
             soc.close()
@@ -119,7 +117,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         try:
             file_length = self.get_file_length(replace_fn)
             start, end = 0, file_length - 1
-            self.server.logger.log(logging.DEBUG, "%d", file_length)
+            datestring = os.path.getmtime(replace_fn)
+            datestring = datetime.datetime.utcfromtimestamp(datestring)
+            datestring = datestring.strftime('%a, %d %b %Y %H:%M:%S GMT')
         except IOError as e:
             self.send_error(500, "Internal Server Error")
             return
@@ -131,15 +131,19 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 self.send_error(416, 'Requested Range Not Satisfiable')
                 return
 
-            self.wfile.write(self.protocol_version + " 206 Partial Content\r\n")
-            self.wfile.write("Accept-Ranges: bytes\r\n")
-            self.wfile.write("Content-Range: bytes %d-%d/%d\r\n" % (start, end, file_length))
-            self.wfile.write("Content-Length: %d\r\n" % (end - start + 1))
+            self.send_response(206, "Partial Content")
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, file_length))
         else:
-            self.wfile.write(self.protocol_version + " 200 Connection established\r\n")
+            self.send_response(200, "OK")
 
-        self.wfile.write("Proxy-agent: %s\r\n" % self.version_string())
-        self.wfile.write("\r\n")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", "%d" % (end - start + 1))
+        self.send_header("Cache-Control", "max-age=3600")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Last-Modified", datestring)
+        self.end_headers()
+
         self.server.logger.log(logging.DEBUG, "Range: from %d to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
@@ -180,8 +184,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                                                                     params, query,
                                                                     '')),
                                                self.request_version))
-                    self.headers['Connection'] = 'close'
-                    del self.headers['Proxy-Connection']
                     for key_val in self.headers.items():
                         soc.send("%s: %s\r\n" % key_val)
                     soc.send("\r\n")
@@ -206,7 +208,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                                             e)
         finally:
             soc.close()
-            self.connection.close()
 
     def _file_read_write(self, fd, start, end):
         try:
@@ -432,7 +433,7 @@ def main ():
         logger.log (logging.INFO, "Any clients will be served...")
 
     server_address = ("0.0.0.0", port)
-    ProxyHandler.protocol = "HTTP/1.0"
+    ProxyHandler.protocol_version = "HTTP/1.1"
     httpd = ThreadingHTTPServer (server_address, ProxyHandler, logger)
     sa = httpd.socket.getsockname ()
     print "Servering HTTP on", sa[0], "port", sa[1]
