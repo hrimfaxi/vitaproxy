@@ -2,6 +2,7 @@
 
 __version__ = "0.0.0"
 
+import time
 import BaseHTTPServer, select, socket, SocketServer, urlparse
 import logging
 import logging.handlers
@@ -25,8 +26,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "VitaProxy/" + __version__
     rbufsize = 0                        # self.rfile Be unbuffered
+    enable_psv_fix = 1
 
-    """
     def handle(self):
         (ip, port) =  self.client_address
         # self.server.logger.log (logging.INFO, "Request from '%s'", ip)
@@ -35,7 +36,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             if self.parse_request(): self.send_error(403)
         else:
             self.__base_handle()
-    """
 
     def _connect_to(self, netloc, soc):
         i = netloc.find(':')
@@ -53,12 +53,19 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         return 1
 
     def fix_path(self):
-        if self.path.startswith("http://psp2-e.np.dl.playstation.nethttp://"):
-            self.path =  "http://" + self.path[len("http://psp2-e.np.dl.playstation.nethttp://"):]
+        if not self.enable_psv_fix:
+            return
+
+        last_http = self.path.rfind("http://")
+
+        if last_http != 0 and last_http != -1:
+            self.server.logger.log(logging.DEBUG, "fixing path %s", self.path)
+            self.path =  self.path[last_http:]
 
     def do_CONNECT(self):
         self.fix_path()
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         try:
             if self._connect_to(self.path, soc):
                 self.wfile.write(self.protocol_version +
@@ -70,10 +77,10 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             soc.close()
             self.connection.close()
 
-    def _get_file_length(self, fn):
+    def get_file_length(self, fn):
         return os.stat(fn).st_size
 
-    def _get_range(self, replace_fn, range_str, file_length):
+    def get_range(self, replace_fn, range_str, file_length):
         if not range_str.startswith("bytes="):
             raise RangeError
 
@@ -100,19 +107,18 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         return start, end
 
-    def _get_local_cache(self, replace_fn):
+    def get_local_cache(self, replace_fn):
         try:
-            file_length = self._get_file_length(replace_fn)
+            file_length = self.get_file_length(replace_fn)
             start, end = 0, file_length - 1
             self.server.logger.log(logging.DEBUG, "%d", file_length)
-            fd = open(replace_fn, "rb")
-        except IOError, e:
+        except IOError as e:
             self.send_error(500, "Internal Server Error")
             return
 
         if 'Range' in self.headers:
             try:
-                start, end = self._get_range(replace_fn, self.headers['Range'], file_length)
+                start, end = self.get_range(replace_fn, self.headers['Range'], file_length)
             except RangeError as e:
                 self.send_error(416, 'Requested Range Not Satisfiable')
                 return
@@ -127,11 +133,13 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.write("Proxy-agent: %s\r\n" % self.version_string())
         self.wfile.write("\r\n")
         self.server.logger.log(logging.DEBUG, "Range: from %d to %d", start, end)
-        self._file_read_write(fd, start, end)
+
+        with open(replace_list, "rb") as fd:
+            self._file_read_write(fd, start, end)
 
     def do_GET(self):
-        self.log_message("path: %s", self.path)
         self.fix_path()
+        self.log_message("%s", self.path)
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
 
         if not path:
@@ -147,10 +155,10 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             for e in self.server.replace_list:
                 if e[0] == self.path:
                     replace_url, replace_fn = e[0:2]
-                    self.log_message("Local cache: %s -> %s", replace_url, replace_fn)
-                    self._get_local_cache(replace_fn)
+                    self.log_message("cache: %s -> %s", replace_url, replace_fn)
+                    self.get_local_cache(replace_fn)
                     return
-					
+
             if scm == 'http':
                 if self._connect_to(netloc, soc):
                     soc.send("%s %s %s\r\n" % (self.command,
@@ -190,6 +198,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         count = 0
         max_count = end - start + 1
         rest = max_count - count
+        tm_a = [time.time(), count]
+        tm_b = [time.time(), count]
+        delay = 0
 
         fd.seek(start)
 
@@ -197,12 +208,25 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             data = fd.read(min(8192, rest))
 #           self.server.logger.log(logging.DEBUG, "read %d bytes" %(len(data)))
 
+
             if not data:
                 break
 
             count += len(data)
             rest -= len(data)
             self.connection.send(data)
+
+            tm_b = [time.time(), count]
+            delta = tm_b[0] - tm_a[0]
+
+            if delay >= 800 and delta >= 10.0:
+                speed = (tm_b[1] - tm_a[1]) / delta
+                self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
+                self.log_message("ETA: %d seconds" % (rest / speed))
+                tm_a = tm_b
+                delay = 0
+            else:
+                delay += 1
 
     def _read_write(self, soc, max_idling=20, local=False):
         iw = [self.connection, soc]
@@ -251,9 +275,17 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
             with open(fn, "r") as f:
                 for l in f:
                     l = l.strip()
-                    url, fn = l.split("->")
-                    self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
+
+                    if not l or l[0] == '#':
+                        continue
+
+                    try:
+                        url, fn = l.split("->")
+                    except ValueError as e:
+                        continue
+                    # self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
                     self.replace_list.append([url, fn])
+            self.logger.log(logging.INFO, "%d local caches loaded" % (len(self.replace_list)))
         except IOError as e:
             pass
 
@@ -272,7 +304,7 @@ def logSetup (filename, log_size, daemon):
         handler = logging.handlers.RotatingFileHandler (filename,
                                                         maxBytes=(log_size*(1<<20)),
                                                         backupCount=5)
-	"""
+    """
     fmt = logging.Formatter ("[%(asctime)-12s.%(msecs)03d] "
                              "%(levelname)-8s {%(name)s %(threadName)s}"
                              " %(message)s",
@@ -342,7 +374,6 @@ def main ():
     port = 12345
     allowed = []
     run_event = threading.Event ()
-    local_hostname = socket.gethostname ()
     
     try: opts, args = getopt.getopt (sys.argv[1:], "l:dhp:", [])
     except getopt.GetoptError, e:
@@ -374,7 +405,6 @@ def main ():
     else:
         logger.log (logging.INFO, "Any clients will be served...")
 
-#    server_address = (socket.gethostbyname (local_hostname), port)
     server_address = ("0.0.0.0", port)
     ProxyHandler.protocol = "HTTP/1.0"
     httpd = ThreadingHTTPServer (server_address, ProxyHandler, logger)
