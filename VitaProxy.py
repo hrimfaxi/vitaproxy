@@ -27,6 +27,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     server_version = "VitaProxy/" + __version__
     rbufsize = 0                        # self.rfile Be unbuffered
     enable_psv_fix = 1
+    expert_mode = 0
 
     def handle(self):
         (ip, port) =  self.client_address
@@ -64,6 +65,13 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_CONNECT(self):
         self.fix_path()
+
+        if self.expert_mode:
+            self.log_message("%s", self.path)
+        else:
+            if ".pkg" in self.path:
+                self.log_message("%s", self.path)
+        
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
@@ -139,7 +147,13 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.fix_path()
-        self.log_message("%s", self.path)
+
+        if self.expert_mode:
+            self.log_message("%s", self.path)
+        else:
+            if ".pkg" in self.path:
+                self.log_message("%s", self.path)
+
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
 
         if not path:
@@ -274,7 +288,7 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
         try:
             with open(fn, "r") as f:
                 for l in f:
-                    l = l.strip()
+                    l = l.decode(errors='ignore').strip()
 
                     if not l or l[0] == '#':
                         continue
