@@ -77,6 +77,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 self._read_write(soc, 300)
         finally:
             soc.close()
+            self.connection.close()
 
     def get_file_length(self, fn):
         return os.stat(fn).st_size
@@ -135,7 +136,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", "%d" % (end - start + 1))
         self.send_header("Cache-Control", "max-age=3600")
-        self.send_header("Connection", "keep-alive")
+        self.send_header("Connection", "close")
         self.send_header("Last-Modified", datestring)
         self.end_headers()
 
@@ -145,6 +146,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             self._file_read_write(fd, start, end)
 
     def do_GET(self):
+        self.close_connection = 1
         self.fix_path()
 
         if self.expert_mode:
@@ -179,6 +181,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                                                                     params, query,
                                                                     '')),
                                                self.request_version))
+                    self.headers['Connection'] = 'close'
+                    del self.headers['Proxy-Connection']
                     for key_val in self.headers.items():
                         soc.send("%s: %s\r\n" % key_val)
                     soc.send("\r\n")
@@ -203,6 +207,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                                             e)
         finally:
             soc.close()
+            self.connection.close()
 
     def _file_read_write(self, fd, start, end):
         count = 0
