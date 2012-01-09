@@ -297,12 +297,21 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                     if not l or l[0] == '#':
                         continue
 
-                    try:
-                        url, fn = l.split("->")
-                    except ValueError as e:
+                    if '->' in l:
+                        url, fn = l.split('->')
+                    else:
+                        url = l
+
+                        if url.rfind('?') > url.rfind('/'):
+                            fn = url[url.rfind('/')+1:url.rfind('?')]
+                        else:
+                            fn = url[url.rfind('/')+1]
+
+                    if not fn:
                         continue
-                    # self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
+
                     self.replace_list.append([url, fn])
+                    # self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
             self.logger.log(logging.INFO, "%d local caches loaded" % (len(self.replace_list)))
         except IOError as e:
             pass
