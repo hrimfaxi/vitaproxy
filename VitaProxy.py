@@ -281,14 +281,14 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
 class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                            BaseHTTPServer.HTTPServer):
-    def __init__ (self, server_address, RequestHandlerClass, logger=None):
+    def __init__ (self, server_address, RequestHandlerClass, logger=None, cache_list = "cache.txt"):
         BaseHTTPServer.HTTPServer.__init__ (self, server_address,
                                             RequestHandlerClass)
         self.logger = logger
         self.replace_list = []
-        self.load_cache_list()
+        self.load_cache_list(cache_list)
 
-    def load_cache_list(self, fn="cache.txt"):
+    def load_cache_list(self, fn):
         try:
             with open(fn, "r") as f:
                 for l in f:
@@ -336,10 +336,11 @@ def logSetup (filename, log_size, daemon):
 
 def usage (msg=None):
     if msg: print msg
-    print sys.argv[0], "[-p port] [-l logfile] [-dh] [allowed_client_name ...]]"
+    print sys.argv[0], "[-p port] [-l logfile] [-c cachelist] [-dh] [allowed_client_name ...]]"
     print
     print "   -p       - Port to bind to"
     print "   -l       - Path to logfile. If not specified, STDOUT is used"
+    print "   -c       - Load cache list"
     print "   -d       - Run in the background"
     print
 
@@ -392,8 +393,9 @@ def main ():
     port = 12345
     allowed = []
     run_event = threading.Event ()
+    cache_list = "cache.txt"
     
-    try: opts, args = getopt.getopt (sys.argv[1:], "l:dhp:", [])
+    try: opts, args = getopt.getopt (sys.argv[1:], "l:c:dhp:", [])
     except getopt.GetoptError, e:
         usage (str (e))
         return 1
@@ -402,6 +404,7 @@ def main ():
         if opt == "-p": port = int (value)
         if opt == "-l": logfile = value
         if opt == "-d": daemon = not daemon
+        if opt == "-c": cache_list = value
         if opt == "-h":
             usage ()
             return 0
@@ -425,7 +428,13 @@ def main ():
 
     server_address = ("0.0.0.0", port)
     ProxyHandler.protocol_version = "HTTP/1.1"
-    httpd = ThreadingHTTPServer (server_address, ProxyHandler, logger)
+
+    try:
+        os.chdir(os.path.dirname(cache_list))
+    except OSError as e:
+        pass
+
+    httpd = ThreadingHTTPServer (server_address, ProxyHandler, logger, cache_list)
     sa = httpd.socket.getsockname ()
     print "Servering HTTP on", sa[0], "port", sa[1]
     req_count = 0
