@@ -109,7 +109,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         return start, end
 
-    def get_local_cache(self, replace_fn):
+    def get_local_cache(self, replace_fn, head_only):
         try:
             file_length = self.get_file_length(replace_fn)
             start, end = 0, file_length - 1
@@ -140,12 +140,15 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_header("Last-Modified", datestring)
         self.end_headers()
 
+        if head_only:
+            return
+
         self.server.logger.log(logging.DEBUG, "Range: from %d to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
             self._file_read_write(fd, start, end)
 
-    def do_GET(self):
+    def do_GET(self, head_only=False):
         self.close_connection = 1
         self.fix_path()
 
@@ -171,7 +174,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 if e[0] == self.path:
                     replace_url, replace_fn = e[0:2]
                     self.log_message("cache: %s -> %s", replace_url, replace_fn)
-                    self.get_local_cache(replace_fn)
+                    self.get_local_cache(replace_fn, head_only)
                     return
 
             if scm == 'http':
@@ -263,7 +266,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         if local: return local_data
         return None
 
-    do_HEAD = do_GET
+    def do_HEAD(self):
+        return self.do_GET(True)
+
     do_POST = do_GET
     do_PUT  = do_GET
     do_DELETE=do_GET
