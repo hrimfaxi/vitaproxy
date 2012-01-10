@@ -52,7 +52,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         except socket.error, arg:
             try: msg = arg[1]
             except: msg = arg
-            self.send_error(404, msg)
+            self.send_error(503, msg)
             return 0
         return 1
 
