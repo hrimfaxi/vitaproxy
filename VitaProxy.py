@@ -305,7 +305,7 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                         if url.rfind('?') > url.rfind('/'):
                             fn = url[url.rfind('/')+1:url.rfind('?')]
                         else:
-                            fn = url[url.rfind('/')+1]
+                            fn = url[url.rfind('/')+1:]
 
                     if not fn:
                         continue
