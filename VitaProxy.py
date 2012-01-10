@@ -310,8 +310,13 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                     if not fn:
                         continue
 
-                    self.replace_list.append([url, fn])
-                    # self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
+                    try:
+                        open(fn).close()
+                        self.replace_list.append([url, fn])
+                        # self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
+                    except IOError as e:
+                        pass
+
             self.logger.log(logging.INFO, "%d local caches loaded" % (len(self.replace_list)))
         except IOError as e:
             pass
