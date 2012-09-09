@@ -14,6 +14,7 @@ import threading
 from types import FrameType, CodeType
 from time import sleep
 import ftplib
+import re
 
 DEFAULT_LOG_FILENAME = "proxy.log"
 
@@ -27,7 +28,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
     enable_psv_fix = 1
-    expert_mode = 0
+    expert_mode = 1
     bufsize = 65536
     show_speed = 1
     update_interval = 3
@@ -171,8 +172,26 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         try:
             for e in self.server.replace_list:
+                if e[0].startswith('re:'):
+                    r = re.compile(e[0][3:])
+
+                    if r.match(self.path):
+                        replace_url = self.path
+                        replace_fn = e[1]
+                        self.log_message("cache: %s -> %s", replace_url, replace_fn)
+                        self.get_local_cache(replace_fn, head_only)
+                        return
+
+                if e[0].startswith('search:') and e[0][7:] in self.path:
+                    replace_url = self.path
+                    replace_fn = e[1]
+                    self.log_message("cache: %s -> %s", replace_url, replace_fn)
+                    self.get_local_cache(replace_fn, head_only)
+                    return
+
                 if e[0] == self.path:
-                    replace_url, replace_fn = e[0:2]
+                    replace_url = self.path
+                    replace_fn = e[1]
                     self.log_message("cache: %s -> %s", replace_url, replace_fn)
                     self.get_local_cache(replace_fn, head_only)
                     return
