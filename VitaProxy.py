@@ -69,6 +69,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             self.path =  self.path[last_http:]
 
     def do_CONNECT(self):
+        self.log_message("CONNECT %s", self.path)
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
