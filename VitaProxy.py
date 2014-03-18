@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-__version__ = "0.0.0"
+__version__ = "0.0.1"
 
 import time, datetime
 import BaseHTTPServer, select, socket, SocketServer, urlparse
@@ -27,11 +27,12 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
-    enable_psv_fix = 1
-    expert_mode = 1
-    bufsize = 65536
-    show_speed = 1
-    update_interval = 3
+    bufsize = 1 * 1024 * 1024
+    update_interval = 2
+    download_dir = "psv/"
+    expert_mode = False
+    show_speed = True
+    enable_psv_fix = True
 
     def handle(self):
         (ip, port) =  self.client_address
@@ -57,7 +58,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             return 0
         return 1
 
-    def fix_path(self):
+    def fixPSVBrokenPath(self):
         if not self.enable_psv_fix:
             return
 
@@ -66,7 +67,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         if last_http != 0 and last_http != -1:
             if self.expert_mode:
                 self.server.logger.log(logging.DEBUG, "fixing path %s", self.path)
-            self.path =  self.path[last_http:]
+            self.path = self.path[last_http:]
 
     def do_CONNECT(self):
         self.log_message("CONNECT %s", self.path)
@@ -81,39 +82,59 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             soc.close()
             self.connection.close()
 
-    def get_file_length(self, fn):
+    def getFileLength(self, fn):
         return os.stat(fn).st_size
 
-    def get_range(self, replace_fn, range_str, file_length):
+    """
+              0-499     specifies the first 500 bytes
+              500-999   specifies the second 500 bytes
+              -500      specifies the last 500 bytes
+              9500-     specifies the bytes from offset 9500 and forward
+              0-0,-1    specifies the first and last byte only(*)(H)
+              500-700,600-799
+                        specifies 300 bytes from offset 500(H)
+              100-199,500-599
+                        specifies two separate 100-byte ranges(*)(H)
+    """
+    def getFileRange(self, replace_fn, range_str, file_length):
         if not range_str.startswith("bytes="):
             raise RangeError
 
-        range_s_start, range_s_end = range_str[len("bytes="):].split('-')
-        range_start = int(range_s_start) if range_s_start else -1
-        range_end = int(range_s_end) if range_s_end else -1
+        range_str = range_str[len("bytes="):]
 
-        if range_start != -1:
-            if range_start >= file_length:
-                raise RangeError
-            start = range_start
-        else:
-            start = 0
-
-        if range_end != -1:
-            if range_end >= file_length:
-                raise RangeError
-            end = range_end
-        else:
-            end = file_length - 1
-
-        if range_start != -1 and range_end != -1 and range_start > range_end:
+        if not "-" in range_str:
             raise RangeError
 
-        return start, end
+        # multipart range not supported
+        if "," in range_str:
+            raise RangeError
 
-    def get_local_cache(self, replace_fn, head_only):
         try:
-            file_length = self.get_file_length(replace_fn)
+            if range_str.startswith('-'):
+                range_s_end = range_str.split('-')[-1]
+                if file_length < int(range_s_end):
+                    raise RangeError
+                return file_length - int(range_s_end), file_length - 1
+
+            range_s_start, range_s_end = range_str.split('-')
+            range_start = int(range_s_start)
+
+            if range_s_end:
+                range_end = int(range_s_end)
+            else:
+                range_end = file_length - 1
+        except ValueError as e:
+            raise RangeError
+
+        if range_start > range_end:
+            raise RangeError
+
+        return range_start, range_end
+
+    def getLocalCache(self, replace_fn, head_only):
+        self.log_message("cache: %s -> %s", self.path, replace_fn)
+        try:
+            file_length = self.getFileLength(replace_fn)
             start, end = 0, file_length - 1
             datestring = os.path.getmtime(replace_fn)
             datestring = datetime.datetime.utcfromtimestamp(datestring)
@@ -124,7 +145,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         if 'Range' in self.headers:
             try:
-                start, end = self.get_range(replace_fn, self.headers['Range'], file_length)
+                start, end = self.getFileRange(replace_fn, self.headers['Range'], file_length)
             except RangeError as e:
                 self.send_error(416, 'Requested Range Not Satisfiable')
                 return
@@ -150,15 +171,27 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         with open(replace_fn, "rb") as fd:
             self._file_read_write(fd, start, end)
 
+    def isPKGorPUPFile(self, path):
+        if ".PKG" in path.upper():
+            return True
+        if ".PUP" in path.upper():
+            return True
+        return False
+
+    def tryDownloadPath(self, path, head_only):
+        if self.isPKGorPUPFile(path):
+            localpath = os.path.join(self.download_dir, os.path.basename(path).split('&')[0])
+            if os.path.exists(localpath):
+                self.getLocalCache(localpath, head_only)
+                return True
+        return False
+
     def do_GET(self, head_only=False):
         self.close_connection = 1
-        self.fix_path()
+        self.fixPSVBrokenPath()
 
-        if self.expert_mode:
+        if self.expert_mode or self.isPKGorPUPFile:
             self.log_message("%s", self.path)
-        else:
-            if ".pkg" in self.path:
-                self.log_message("%s", self.path)
 
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
 
@@ -172,6 +205,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
+            if self.tryDownloadPath(self.path, head_only):
+                return
+			
             for e in self.server.replace_list:
                 if e[0].startswith('re:'):
                     r = re.compile(e[0][3:])
@@ -179,22 +215,19 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                     if r.match(self.path):
                         replace_url = self.path
                         replace_fn = e[1]
-                        self.log_message("cache: %s -> %s", replace_url, replace_fn)
-                        self.get_local_cache(replace_fn, head_only)
+                        self.getLocalCache(replace_fn, head_only)
                         return
 
                 if e[0].startswith('search:') and e[0][7:] in self.path:
                     replace_url = self.path
                     replace_fn = e[1]
-                    self.log_message("cache: %s -> %s", replace_url, replace_fn)
-                    self.get_local_cache(replace_fn, head_only)
+                    self.getLocalCache(replace_fn, head_only)
                     return
 
                 if e[0] == self.path:
                     replace_url = self.path
                     replace_fn = e[1]
-                    self.log_message("cache: %s -> %s", replace_url, replace_fn)
-                    self.get_local_cache(replace_fn, head_only)
+                    self.getLocalCache(replace_fn, head_only)
                     return
 
             if scm == 'http':
@@ -424,7 +457,7 @@ def main ():
     logfile = None
     daemon  = False
     max_log_size = 20
-    port = 12345
+    port = 8080
     allowed = []
     run_event = threading.Event ()
     cache_list = "cache.txt"
