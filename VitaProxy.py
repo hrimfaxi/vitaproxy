@@ -29,7 +29,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
-    bufsize = 4096
+    bufsize = 65536
     update_interval = 1
     download_dir = "d:\\QQDownload"
     expert_mode = True
@@ -102,7 +102,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         if not range_str.startswith("bytes="):
             raise RangeError
 
-        self.log_message(range_str)
         range_str = range_str[len("bytes="):]
 
         if not "-" in range_str:
@@ -136,12 +135,17 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def getLocalCache(self, replace_fn, head_only):
         self.log_message("cache: %s -> %s", self.path, replace_fn)
+        for h in self.headers:
+                self.log_message("%s: %s", h, self.headers[h])
         try:
             file_length = self.getFileLength(replace_fn)
             start, end = 0, file_length - 1
-            datestring = os.path.getmtime(replace_fn)
-            datestring = datetime.datetime.utcfromtimestamp(datestring)
-            datestring = datestring.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            lastModString = os.path.getmtime(replace_fn)
+            lastModString = datetime.datetime.utcfromtimestamp(lastModString)
+            lastModString = lastModString.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            dateString = os.path.getctime(replace_fn)
+            dateString = datetime.datetime.utcfromtimestamp(dateString)
+            dateString = dateString.strftime('%a, %d %b %Y %H:%M:%S GMT')
         except IOError as e:
             self.send_error(500, "Internal Server Error")
             return
@@ -161,9 +165,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", "%d" % (end - start + 1))
-        self.send_header("Cache-Control", "max-age=3600")
         self.send_header("Connection", "close")
-        self.send_header("Last-Modified", datestring)
+        self.send_header("Last-Modified", lastModString)
+        self.send_header("Date", dateString)
         self.end_headers()
 
         if head_only:
@@ -287,7 +291,11 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
             count += len(data)
             rest -= len(data)
-            self.connection.send(data)
+            try:
+                self.connection.send(data)
+            except Exception as e:
+                self.log_message("Connection dropped, %d bytes sent", count)
+                return
 
             if self.show_speed:
                 tm_b = [time.time(), count]
