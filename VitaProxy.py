@@ -21,18 +21,20 @@ DEFAULT_LOG_FILENAME = "proxy.log"
 class RangeError(Exception):
     pass
 
+msgMutex = threading.Lock()
+
 class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     __base = BaseHTTPServer.BaseHTTPRequestHandler
     __base_handle = __base.handle
 
     server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
-    bufsize = 1 * 1024 * 1024
-    update_interval = 2
-    download_dir = "psv/"
-    expert_mode = False
+    bufsize = 4096
+    update_interval = 1
+    download_dir = "d:\\QQDownload"
+    expert_mode = True
     show_speed = True
-    enable_psv_fix = True
+    enable_psv_fix = False
 
     def handle(self):
         (ip, port) =  self.client_address
@@ -100,6 +102,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         if not range_str.startswith("bytes="):
             raise RangeError
 
+        self.log_message(range_str)
         range_str = range_str[len("bytes="):]
 
         if not "-" in range_str:
@@ -180,7 +183,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def tryDownloadPath(self, path, head_only):
         if self.isPKGorPUPFile(path):
-            localpath = os.path.join(self.download_dir, os.path.basename(path).split('&')[0])
+            localpath = os.path.join(self.download_dir, os.path.basename(path).split('?')[0])
             if os.path.exists(localpath):
                 self.getLocalCache(localpath, head_only)
                 return True
@@ -207,7 +210,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         try:
             if self.tryDownloadPath(self.path, head_only):
                 return
-			
             for e in self.server.replace_list:
                 if e[0].startswith('re:'):
                     r = re.compile(e[0][3:])
@@ -327,7 +329,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     do_DELETE=do_GET
 
     def log_message (self, format, *args):
+        msgMutex.acquire()
         self.server.logger.log (logging.INFO, "%s", format % args)
+        msgMutex.release()
         
     def log_error (self, format, *args):
         self.server.logger.log (logging.ERROR, "%s", format % args)
