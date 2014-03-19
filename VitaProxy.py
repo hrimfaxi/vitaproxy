@@ -38,7 +38,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def handle(self):
         (ip, port) =  self.client_address
-        # self.server.logger.log (logging.INFO, "Request from '%s'", ip)
         if hasattr(self, 'allowed_clients') and ip not in self.allowed_clients:
             self.raw_requestline = self.rfile.readline()
             if self.parse_request(): self.send_error(403)
@@ -51,7 +50,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             host_port = netloc[:i], int(netloc[i+1:])
         else:
             host_port = netloc, 80
-        # self.server.logger.log (logging.INFO, "connect to %s:%d", host_port[0], host_port[1])
         try: soc.connect(host_port)
         except socket.error, arg:
             try: msg = arg[1]
@@ -68,7 +66,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         if last_http != 0 and last_http != -1:
             if self.expert_mode:
-                self.server.logger.log(logging.DEBUG, "fixing path %s", self.path)
+                self.log_message("fixing path %s", self.path)
             self.path = self.path[last_http:]
 
     def do_CONNECT(self):
@@ -136,7 +134,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     def getLocalCache(self, replace_fn, head_only):
         self.log_message("cache: %s -> %s", self.path, replace_fn)
         for h in self.headers:
-                self.log_message("%s: %s", h, self.headers[h])
+                self.log_debug("%s: %s", h, self.headers[h])
         try:
             file_length = self.getFileLength(replace_fn)
             start, end = 0, file_length - 1
@@ -173,15 +171,17 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         if head_only:
             return
 
-        self.server.logger.log(logging.DEBUG, "Range: from %d to %d", start, end)
+        self.log_debug("Range: from %d to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
             self._file_read_write(fd, start, end)
 
     def isPKGorPUPFile(self, path):
-        if ".PKG" in path.upper():
+        localpath = os.path.basename(path).split('?')[0]
+        ext = os.path.splitext(localpath).upper()
+        if ".PKG" == ext:
             return True
-        if ".PUP" in path.upper():
+        if ".PUP" == ext:
             return True
         return False
 
@@ -220,20 +220,15 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
                     if r.match(self.path):
                         replace_url = self.path
-                        replace_fn = e[1]
-                        self.getLocalCache(replace_fn, head_only)
+                        self.getLocalCache(e[1], head_only)
                         return
 
                 if e[0].startswith('search:') and e[0][7:] in self.path:
-                    replace_url = self.path
-                    replace_fn = e[1]
-                    self.getLocalCache(replace_fn, head_only)
+                    self.getLocalCache(e[1], head_only)
                     return
 
                 if e[0] == self.path:
-                    replace_url = self.path
-                    replace_fn = e[1]
-                    self.getLocalCache(replace_fn, head_only)
+                    self.getLocalCache(e[1], head_only)
                     return
 
             if scm == 'http':
@@ -284,7 +279,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         while rest > 0:
             data = fd.read(min(self.bufsize, rest))
-#           self.server.logger.log(logging.DEBUG, "read %d bytes" %(len(data)))
 
             if not data:
                 break
@@ -294,7 +288,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             try:
                 self.connection.send(data)
             except Exception as e:
-                self.log_message("Connection dropped, %d bytes sent", count)
+                self.log_error("Connection dropped, %d bytes sent", count)
                 return
 
             if self.show_speed:
@@ -342,7 +336,14 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         msgMutex.release()
         
     def log_error (self, format, *args):
+        msgMutex.acquire()
         self.server.logger.log (logging.ERROR, "%s", format % args)
+        msgMutex.release()
+
+    def log_debug (self, format, *args):
+        msgMutex.acquire()
+        self.server.logger.log (logging.DEBUG, "%s", format % args)
+        msgMutex.release()
 
 class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                            BaseHTTPServer.HTTPServer):
@@ -378,7 +379,6 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                     try:
                         open(fn).close()
                         self.replace_list.append([url, fn])
-                        # self.logger.log(logging.DEBUG, "loaded cache: url %s -> file %s " % (url, fn))
                     except IOError as e:
                         pass
 
