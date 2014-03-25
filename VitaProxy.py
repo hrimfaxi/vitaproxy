@@ -2,7 +2,7 @@
 
 __version__ = "0.0.1"
 
-import time, datetime
+import time, datetime, json
 import BaseHTTPServer, select, socket, SocketServer, urlparse
 import logging
 import logging.handlers
@@ -23,18 +23,34 @@ class RangeError(Exception):
 
 msgMutex = threading.Lock()
 
+class Configure(dict):
+    def loadConfigure(self):
+        self['showSpeed'] = True
+        self['fixVitaPath'] = True
+        self['expertMode'] = False
+        self['downloadDIR'] = "psv/"
+        self['updateInterval'] = 2
+        self['bufSize'] = 1 * 1024 * 1024
+
+        try:
+            with open("settings.json", "rb") as f:
+                setting = json.load(f)
+                for e in setting:
+                    self[e] = setting[e]
+        except IOError as e:
+            pass
+
+    def __init__(self):
+        self.loadConfigure()
+
+CONF = Configure()
+
 class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     __base = BaseHTTPServer.BaseHTTPRequestHandler
     __base_handle = __base.handle
 
     server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
-    bufsize = 65536
-    update_interval = 1
-    download_dir = "d:\\QQDownload"
-    expert_mode = True
-    show_speed = True
-    enable_psv_fix = False
 
     def handle(self):
         (ip, port) =  self.client_address
@@ -59,13 +75,13 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         return 1
 
     def fixPSVBrokenPath(self):
-        if not self.enable_psv_fix:
+        if not CONF['fixVitaPath']:
             return
 
         last_http = self.path.rfind("http://")
 
         if last_http != 0 and last_http != -1:
-            if self.expert_mode:
+            if CONF['expertMode']:
                 self.log_message("fixing path %s", self.path)
             self.path = self.path[last_http:]
 
@@ -187,7 +203,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def tryDownloadPath(self, path, head_only):
         if self.isPKGorPUPFile(path):
-            localpath = os.path.join(self.download_dir, os.path.basename(path).split('?')[0])
+            localpath = os.path.join(CONF['downloadDIR'], os.path.basename(path).split('?')[0])
             if os.path.exists(localpath):
                 self.getLocalCache(localpath, head_only)
                 return True
@@ -197,7 +213,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.close_connection = 1
         self.fixPSVBrokenPath()
 
-        if self.expert_mode or self.isPKGorPUPFile:
+        if CONF['expertMode'] or self.isPKGorPUPFile:
             self.log_message("%s", self.path)
 
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
@@ -271,14 +287,14 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         max_count = end - start + 1
         rest = max_count - count
 
-        if self.show_speed:
+        if CONF['showSpeed']:
             tm_a = [time.time(), count]
             tm_b = [time.time(), count]
 
         fd.seek(start)
 
         while rest > 0:
-            data = fd.read(min(self.bufsize, rest))
+            data = fd.read(min(CONF['bufSize'], rest))
 
             if not data:
                 break
@@ -291,11 +307,11 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 self.log_error("Connection dropped, %d bytes sent", count)
                 return
 
-            if self.show_speed:
+            if CONF['showSpeed']:
                 tm_b = [time.time(), count]
                 delta = tm_b[0] - tm_a[0]
 
-                if delta >= self.update_interval:
+                if delta >= CONF['updateInterval']:
                     speed = (tm_b[1] - tm_a[1]) / delta
                     self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
                     self.log_message("ETA: %d seconds" % (rest / speed))
@@ -314,7 +330,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 for i in ins:
                     if i is soc: out = self.connection
                     else: out = soc
-                    data = i.recv(self.bufsize)
+                    data = i.recv(CONF['bufSize'])
                     if data:
                         if local: local_data += data
                         else: out.send(data)
