@@ -74,6 +74,26 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             return 0
         return 1
 
+    def _connect_to_proxy(self, proxy, netloc, soc):
+        if proxy.startswith("http://"):
+            proxy = proxy[len("http://"):]
+        host_port = proxy.split(':')
+        host_port = (host_port[0], int(host_port[1]))
+        try:
+            soc.connect(host_port)
+            soc.send("%s %s %s\r\n" % (self.command, netloc, self.request_version))
+            self.headers['Connection'] = 'close'
+            del self.headers['Proxy-Connection']
+            for key_val in self.headers.items():
+                soc.send("%s: %s\r\n" % key_val)
+            soc.send("\r\n")
+        except socket.error, arg:
+            try: msg = arg[1]
+            except: msg = arg
+            self.send_error(503, msg)
+            return 0
+        return 1
+
     def fixPSVBrokenPath(self):
         if not CONF['fixVitaPath']:
             return
@@ -90,10 +110,14 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
-            if self._connect_to(self.path, soc):
-                self.send_response(200, "OK")
-                self.end_headers()
-                self._read_write(soc, 300)
+            if 'httpsProxy' in CONF:
+                if self._connect_to_proxy(CONF['httpsProxy'], self.path, soc):
+                    self._read_write(soc, 300)
+            else:
+                if self._connect_to(self.path, soc):
+                    self.send_response(200, "OK")
+                    self.end_headers()
+                    self._read_write(soc, 300)
         finally:
             soc.close()
             self.connection.close()
