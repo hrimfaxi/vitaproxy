@@ -1,0 +1,8 @@
+{
+    "expertMode": false, 
+    "showSpeed": true, 
+    "downloadDIR": "d:\\qqdownloads", 
+    "fixVitaPath": true, 
+    "updateInterval": 2, 
+    "bufSize": 1048576
+}
