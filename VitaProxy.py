@@ -311,7 +311,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 tm_b = [time.time(), count]
                 delta = tm_b[0] - tm_a[0]
 
-                if delta >= CONF['updateInterval']:
+                if delta >= CONF['updateInterval'] or rest == 0:
                     speed = (tm_b[1] - tm_a[1]) / delta
                     self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
                     self.log_message("ETA: %d seconds" % (rest / speed))
