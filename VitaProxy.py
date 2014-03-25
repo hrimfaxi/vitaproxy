@@ -178,7 +178,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def isPKGorPUPFile(self, path):
         localpath = os.path.basename(path).split('?')[0]
-        ext = os.path.splitext(localpath).upper()
+        ext = os.path.splitext(localpath)[-1].upper()
         if ".PKG" == ext:
             return True
         if ".PUP" == ext:
