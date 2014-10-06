@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 
 __version__ = "0.0.1"
 
@@ -15,6 +15,18 @@ from types import FrameType, CodeType
 from time import sleep
 import ftplib
 import re
+
+NO_FALLOCATE = 0
+try:
+    import fallocate
+except ImportError as e:
+    NO_FALLOCATE = 1
+
+NO_SENDFILE = 0
+try:
+    from sendfile import sendfile
+except ImportError as e:
+    NO_SENDFILE = 1
 
 DEFAULT_LOG_FILENAME = "proxy.log"
 
@@ -214,6 +226,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.log_debug("Range: from %d to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
+            if not NO_FALLOCATE:
+                fallocate.posix_fadvise(fd, 0, 0, fallocate.POSIX_FADV_SEQUENTIAL)
             self._file_read_write(fd, start, end)
 
     def isPKGorPUPFile(self, path):
@@ -310,26 +324,41 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         count = 0
         max_count = end - start + 1
         rest = max_count - count
+        offset = start
 
         if CONF['showSpeed']:
             tm_a = [time.time(), count]
             tm_b = [time.time(), count]
 
-        fd.seek(start)
+        fd.seek(offset)
 
         while rest > 0:
-            data = fd.read(min(CONF['bufSize'], rest))
+            if NO_SENDFILE:
+                data = fd.read(min(CONF['bufSize'], rest))
 
-            if not data:
-                break
+                if not data:
+                    break
 
-            count += len(data)
-            rest -= len(data)
-            try:
-                self.connection.send(data)
-            except Exception as e:
-                self.log_error("Connection dropped, %d bytes sent", count)
-                return
+                count += len(data)
+                rest -= len(data)
+                try:
+                    self.connection.send(data)
+                except Exception as e:
+                    self.log_error("Connection dropped, %d bytes sent", count)
+                    return
+            else:
+                try:
+                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset, min(CONF['bufSize'], rest))
+                except Exception as e:
+                    self.log_error("Connection dropped, %d bytes sent", count)
+                    return
+
+                if sent == 0:
+                    break
+
+                offset += sent
+                count += sent
+                rest -= sent
 
             if CONF['showSpeed']:
                 tm_b = [time.time(), count]

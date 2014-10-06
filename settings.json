@@ -1,8 +1,9 @@
 {
     "expertMode": false, 
     "showSpeed": true, 
-    "downloadDIR": "d:\\qqdownload", 
+    "downloadDIR": "/home/hrimfaxi/kz4/", 
     "fixVitaPath": true, 
     "updateInterval": 2, 
-    "bufSize": 1048576
+    "bufSize": 16777216,
+	"httpsProxy": "10.1.1.6:8119"
 }
