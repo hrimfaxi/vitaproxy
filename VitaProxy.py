@@ -1,6 +1,6 @@
 #!/usr/bin/python2
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 import time, datetime, json
 import BaseHTTPServer, select, socket, SocketServer, urlparse
@@ -16,17 +16,17 @@ from time import sleep
 import ftplib
 import re
 
-NO_FALLOCATE = 0
+HAVE_FALLOCATE = True
 try:
     import fallocate
 except ImportError as e:
-    NO_FALLOCATE = 1
+    HAVE_FALLOCATE = False
 
-NO_SENDFILE = 0
+HAVE_SENDFILE = True
 try:
     from sendfile import sendfile
 except ImportError as e:
-    NO_SENDFILE = 1
+    HAVE_SENDFILE = False
 
 DEFAULT_LOG_FILENAME = "proxy.log"
 
@@ -226,7 +226,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.log_debug("Range: from %d to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
-            if not NO_FALLOCATE:
+            if HAVE_FALLOCATE:
                 fallocate.posix_fadvise(fd, 0, 0, fallocate.POSIX_FADV_SEQUENTIAL)
             self._file_read_write(fd, start, end)
 
@@ -321,52 +321,47 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             self.connection.close()
 
     def _file_read_write(self, fd, start, end):
-        count = 0
-        max_count = end - start + 1
-        rest = max_count - count
         offset = start
 
         if CONF['showSpeed']:
-            tm_a = [time.time(), count]
-            tm_b = [time.time(), count]
+            tm_a = [time.time(), offset - start]
+            tm_b = [time.time(), offset - start]
 
         fd.seek(offset)
 
-        while rest > 0:
-            if NO_SENDFILE:
-                data = fd.read(min(CONF['bufSize'], rest))
+        while True:
+            if HAVE_SENDFILE:
+                try:
+                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset, CONF['bufSize'])
+                except Exception as e:
+                    self.log_error("Connection dropped, %d bytes sent", offset - start)
+                    return
+
+                if sent <= 0:
+                    break
+
+                offset += sent
+            else:
+                data = fd.read(CONF['bufSize'])
 
                 if not data:
                     break
 
-                count += len(data)
-                rest -= len(data)
+                offset += len(data)
                 try:
                     self.connection.send(data)
                 except Exception as e:
-                    self.log_error("Connection dropped, %d bytes sent", count)
+                    self.log_error("Connection dropped, %d bytes sent", offset - start)
                     return
-            else:
-                try:
-                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset, min(CONF['bufSize'], rest))
-                except Exception as e:
-                    self.log_error("Connection dropped, %d bytes sent", count)
-                    return
-
-                if sent == 0:
-                    break
-
-                offset += sent
-                count += sent
-                rest -= sent
 
             if CONF['showSpeed']:
-                tm_b = [time.time(), count]
+                tm_b = [time.time(), offset - start]
                 delta = tm_b[0] - tm_a[0]
+                rest = end - offset
 
                 if delta >= CONF['updateInterval'] or rest == 0:
                     speed = (tm_b[1] - tm_a[1]) / delta
-                    self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, count, rest))
+                    self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, offset - start, rest))
                     self.log_message("ETA: %d seconds" % (rest / speed))
                     tm_a = tm_b
 
