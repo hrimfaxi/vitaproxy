@@ -187,9 +187,10 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         else:
             self.send_response(200, "OK")
 
+        content_length = end - start + 1
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", "%d" % (end - start + 1))
+        self.send_header("Content-Length", "%d" % (content_length))
         self.send_header("Connection", "close")
         self.send_header("Last-Modified", lastModString)
         self.send_header("Date", dateString)
@@ -202,8 +203,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         with open(replace_fn, "rb") as fd:
             if fallocate:
-		log.debug("posix_fadvise: start from %d bytes, %d bytes length", start, end - start)
-                fallocate.posix_fadvise(fd, start, end - start, fallocate.POSIX_FADV_SEQUENTIAL | fallocate.POSIX_FADV_WILLNEED)
+                log.debug("posix_fadvise: start from %d bytes, %d bytes length", start, content_length)
+                fallocate.posix_fadvise(fd, start, content_length, fallocate.POSIX_FADV_SEQUENTIAL | fallocate.POSIX_FADV_WILLNEED)
             self._file_read_write(fd, start, end)
 
     def isPKGorPUPFile(self, path):
