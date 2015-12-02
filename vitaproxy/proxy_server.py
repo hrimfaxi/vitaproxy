@@ -17,7 +17,8 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
     def __init__ (self, server_address, RequestHandlerClass, cache_list = "cache.txt"):
         BaseHTTPServer.HTTPServer.__init__ (self, server_address,
                                             RequestHandlerClass)
-        self.replace_list = []
+        " 字典键为转化规则，值为转化的目标文件名 "
+        self.replace_dict = {}
         self.load_cache_list(cache_list)
 
     def load_cache_list(self, fn):
@@ -33,12 +34,7 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                         url, fn = l.split('->')
                     else:
                         url = l
-
-                        if url.rfind('?') > url.rfind('/'):
-                            fn = url[url.rfind('/')+1:url.rfind('?')]
-                        else:
-                            fn = url[url.rfind('/')+1:]
-
+                        filename = url.split("?")[0].split("/")[-1]
                     if not fn:
                         continue
 
@@ -48,15 +44,15 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
 
                     try:
                         open(fn).close()
-                        self.replace_list.append([url, fn])
+                        self.replace_dict[url] = fn
                     except IOError as e:
-                        pass
+                        log.error("%s: %s", fn, str(e))
 
-            log.info("%d local caches loaded" % (len(self.replace_list)))
+            log.info("%d local caches loaded" % (len(self.replace_dict)))
             log.debug("Dumping cache list:")
-            log.debug(self.replace_list)
+            log.debug(self.replace_dict)
         except IOError as e:
-            pass
+            log.error(str(e))
 
 def start_server():
     server_address = ("0.0.0.0", CONF['port'])

@@ -238,21 +238,21 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         try:
             if self.tryDownloadPath(self.path, head_only):
                 return
-            for e in self.server.replace_list:
-                if e[0].startswith('re:'):
-                    r = re.compile(e[0][3:])
+            for url, filename in self.server.replace_dict.iteritems():
+                if url.startswith('re:'):
+                    r = re.compile(url[len('re:'):])
 
                     if r.match(self.path):
                         replace_url = self.path
-                        self.getLocalCache(e[1], head_only)
+                        self.getLocalCache(filename, head_only)
                         return
 
-                if e[0].startswith('search:') and e[0][7:] in self.path:
-                    self.getLocalCache(e[1], head_only)
+                if url.startswith('search:') and url[len('search:'):] in self.path:
+                    self.getLocalCache(filename, head_only)
                     return
 
-                if e[0] == self.path:
-                    self.getLocalCache(e[1], head_only)
+                if url == self.path:
+                    self.getLocalCache(filename, head_only)
                     return
 
             if scm == 'http':
