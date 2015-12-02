@@ -4,7 +4,6 @@
 import BaseHTTPServer, select, socket, SocketServer
 import os.path, threading
 
-from types import FrameType, CodeType
 from time import sleep
 
 from vitaproxy import constants

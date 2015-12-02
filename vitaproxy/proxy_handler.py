@@ -80,9 +80,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         last_http = self.path.rfind("http://")
 
         if last_http != 0 and last_http != -1:
-            if CONF['expertMode']:
-                self.log_message("fixing path %s", self.path)
-            self.path = self.path[last_http:]
+            fixed = self.path[last_http:]
+            log.info("Fixed psvita broken path %s to %s", self.path, fixed)
+            self.path = fixed
 
     def do_CONNECT(self):
         log.info("CONNECT %s", self.path)
@@ -152,6 +152,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def getLocalCache(self, replace_fn, head_only):
         log.info("cache redirected from %s to %s", self.path, replace_fn)
+        log.debug("Dumping headers:")
         for h in self.headers:
                 log.debug("    %s: %s", h, self.headers[h])
         try:
