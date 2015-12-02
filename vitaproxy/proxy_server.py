@@ -68,6 +68,7 @@ def start_server():
 
     httpd = ThreadingHTTPServer(server_address, proxy_handler.ProxyHandler, CONF['cache'])
     sa = httpd.socket.getsockname()
+    log.info("Download directory: %s", CONF['downloadDIR'])
     log.info("Servering HTTP on %s %s %s", sa[0], "port", sa[1])
     req_count = 0
 
