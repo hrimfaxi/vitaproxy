@@ -87,7 +87,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
-            if 'httpsProxy' in CONF:
+            if CONF['httpsProxy']:
                 if self._connect_to_proxy(CONF['httpsProxy'], self.path, soc):
                     self._read_write(soc, 300)
             else:
