@@ -20,6 +20,8 @@ def parse_arguments(argv):
             help=('Set VitaProxy cache list file'))
     parser.add_option('-d', '--download-dir', type='string', dest='downloadDIR', action='store', default=CONF['downloadDIR'],
             help=('Set VitaProxy download directory for automatically caching PKG/PUP file'))
+    parser.add_option('-w', '--log-level', dest='logLevel', action='store', default=CONF['logLevel'],
+                      choices = [ 'debug', 'info', 'warning', 'error' ], help=('Set verbose level'))
 
     opts, args = parser.parse_args(argv)
     opts = opts.__dict__

@@ -13,7 +13,18 @@ _msg_mtx = threading.Lock()
 
 def init_logger():
     logger = logging.getLogger(constants.PROG_NAME)
-    logger.setLevel(CONF['logLevel'])
+
+    level = logging.DEBUG
+    if CONF['logLevel'] == 'debug':
+        level = logging.DEBUG
+    elif CONF['logLevel'] == 'error':
+        level = logging.ERROR
+    elif CONF['logLevel'] == 'warning':
+        level = logging.WARNING
+    elif CONF['logLevel'] == 'info':
+        level = logging.INFO
+
+    logger.setLevel(level)
     logger.handlers = []
     handler = logging.StreamHandler()
     FORMAT = logging.Formatter('%(asctime)-15s %(levelname)s: %(message)s')

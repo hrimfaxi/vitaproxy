@@ -12,8 +12,8 @@ CONF = {
     'bufSize' : 1 * 1024 * 1024,
     'port' : 8080,
     'cache' : constants.CACHES_PATH,
-    'logLevel' : logging.DEBUG,
     'httpsProxy' : '',
+    'logLevel' : 'debug',
 }
 
 def load_configure():

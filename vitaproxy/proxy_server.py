@@ -74,7 +74,7 @@ def start_server():
         except select.error, e:
             if e[0] == 4 and run_event.isSet(): pass
             else:
-                log.critical("Errno: %d - %s", e[0], e[1])
+                log.error("Errno: %d - %s", e[0], e[1])
         except socket.error as e:
             if e.errno == 10054:
                 log.error("Connection reset by peer")
