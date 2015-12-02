@@ -327,7 +327,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
                     if delta >= CONF['updateInterval'] or rest == 0:
                         speed = (tm_b[1] - tm_a[1]) / delta
-                        log.info("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes, ETA %d seconds"
+                        log.info("SPD: %.2fKB/S, XFER / TODO : %d / %d bytes, ETA %d sec"
                                  % (speed / 1000, offset - start, rest, rest / speed))
                         tm_a = tm_b
         except (OSError, socket.error) as e:
