@@ -152,7 +152,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def getLocalCache(self, replace_fn, head_only):
         log.info("cache redirected from %s to %s", self.path, replace_fn)
-        log.debug("Dumping headers:")
+        log.debug("Dumping client headers:")
         for h in self.headers:
                 log.debug("    %s: %s", h, self.headers[h])
         try:
@@ -361,6 +361,12 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     do_POST = do_GET
     do_PUT  = do_GET
     do_DELETE=do_GET
+
+    base = BaseHTTPServer.BaseHTTPRequestHandler
+
+    def send_header(self, keyword, value):
+        log.debug("    %s: %s", keyword, value)
+        ProxyHandler.base.send_header(self, keyword, value)
 
     def log_message(self, format, *args):
         log.info(format, *args)
