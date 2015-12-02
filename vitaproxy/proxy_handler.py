@@ -22,6 +22,8 @@ try:
 except ImportError as e:
     pass
 
+class RangeError(RuntimeError):
+    pass
 
 class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     __base = BaseHTTPServer.BaseHTTPRequestHandler
