@@ -10,6 +10,8 @@ from vitaproxy import config
 from vitaproxy.config import CONF
 from vitaproxy import log
 
+SENDFILE_MAXSIZE = 2147483647L
+
 fallocate = None
 try:
     import fallocate
@@ -305,8 +307,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         try:
             while content_length > 0:
                 if sendfile:
-                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset,
-                            min(content_length, CONF['bufSize']))
+                    sent = min(content_length, SENDFILE_MAXSIZE)
+                    log.debug("sendfile: offset / size: %d / %d bytes", offset, sent)
+                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset, sent)
                     if sent <= 0:
                         break
                 else:
