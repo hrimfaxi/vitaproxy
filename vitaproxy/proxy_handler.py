@@ -330,7 +330,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                         log.info("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes, ETA %d seconds"
                                  % (speed / 1000, offset - start, rest, rest / speed))
                         tm_a = tm_b
-        except socket.error as e:
+        except (OSError, socket.error) as e:
             log.error("Connection dropped, %d bytes sent, reason: %s", offset - start, str(e))
 
     def _read_write(self, soc, max_idling=20, local=False):
