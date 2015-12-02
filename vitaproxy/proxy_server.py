@@ -20,6 +20,8 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
         " 字典键为转化规则，值为转化的目标文件名 "
         self.replace_dict = {}
         self.load_cache_list(cache_list)
+        " 定义此值使主线程将不等待子线程结束直接退出，使KeyboardInterrupt得到迅速响应 "
+        self.daemon_threads = True
 
     def load_cache_list(self, fn):
         if not os.path.exists(fn):
