@@ -298,48 +298,44 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def _file_read_write(self, fd, start, end):
         offset = start
+        content_length = end - start + 1
 
         if CONF['showSpeed']:
             tm_a = [time.time(), offset - start]
             tm_b = [time.time(), offset - start]
 
         fd.seek(offset)
+        try:
+            while content_length > 0:
+                if sendfile:
+                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset,
+                            min(content_length, CONF['bufSize']))
+                    if sent <= 0:
+                        break
+                else:
+                    data = fd.read(min(content_length, CONF['bufSize']))
+                    if not data:
+                        break
 
-        while True:
-            if sendfile:
-                try:
-                    sent = sendfile(self.connection.fileno(), fd.fileno(), offset, CONF['bufSize'])
-                except Exception as e:
-                    self.log_error("Connection dropped, %d bytes sent", offset - start)
-                    return
-
-                if sent <= 0:
-                    break
+                    self.connection.send(data)
+                    sent = len(data)
 
                 offset += sent
-            else:
-                data = fd.read(CONF['bufSize'])
+                content_length -= sent
 
-                if not data:
-                    break
+                if CONF['showSpeed']:
+                    tm_b = [time.time(), offset - start]
+                    delta = tm_b[0] - tm_a[0]
+                    rest = end - offset + 1
 
-                offset += len(data)
-                try:
-                    self.connection.send(data)
-                except Exception as e:
-                    self.log_error("Connection dropped, %d bytes sent", offset - start)
-                    return
-
-            if CONF['showSpeed']:
-                tm_b = [time.time(), offset - start]
-                delta = tm_b[0] - tm_a[0]
-                rest = end - offset
-
-                if delta >= CONF['updateInterval'] or rest == 0:
-                    speed = (tm_b[1] - tm_a[1]) / delta
-                    self.log_message("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes" % (speed / 1000, offset - start, rest))
-                    self.log_message("ETA: %d seconds" % (rest / speed))
-                    tm_a = tm_b
+                    if delta >= CONF['updateInterval'] or rest == 0:
+                        speed = (tm_b[1] - tm_a[1]) / delta
+                        log.info("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes"
+                                 % (speed / 1000, offset - start, rest))
+                        log.info("ETA: %d seconds" % (rest / speed))
+                        tm_a = tm_b
+        except Exception as e:
+            log.error("Connection dropped, %d bytes sent", offset - start)
 
     def _read_write(self, soc, max_idling=20, local=False):
         iw = [self.connection, soc]
