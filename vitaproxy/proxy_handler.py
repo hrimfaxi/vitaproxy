@@ -288,7 +288,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                         ftp.retrbinary ("RETR %s"%path, self.connection.send)
                     ftp.quit ()
                 except Exception, e:
-                    log.warning("FTP Exception: %s", e)
+                    log.error("FTP Exception, reason: %s", str(e))
         finally:
             soc.close()
             self.connection.close()
@@ -330,8 +330,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                         log.info("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes, ETA %d seconds"
                                  % (speed / 1000, offset - start, rest, rest / speed))
                         tm_a = tm_b
-        except Exception as e:
-            log.error("Connection dropped, %d bytes sent", offset - start)
+        except socket.error as e:
+            log.error("Connection dropped, %d bytes sent, reason: %s", offset - start, str(e))
 
     def _read_write(self, soc, max_idling=20, local=False):
         iw = [self.connection, soc]
