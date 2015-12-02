@@ -171,9 +171,15 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         if 'Range' in self.headers:
             try:
+                " 在http协议中，start和end为[start, end] 范围从0开始到文件大小-1 "
                 start, end = self.getFileRange(replace_fn, self.headers['Range'], file_length)
             except RangeError as e:
-                self.send_error(416, 'Requested Range Not Satisfiable')
+                """ rfc2616:  A server sending a response with status code 416
+                (Requested range not satisfiable) SHOULD include a Content-Range
+                field with a byte-range- resp-spec of "*".
+                The instance-length specifies the current length of the selected resource. """
+                self.send_response(416, 'Requested Range Not Satisfiable')
+                self.send_header("Content-Range", "bytes */%d" % (file_length))
                 return
 
             self.send_response(206, "Partial Content")
