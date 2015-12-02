@@ -1,61 +1,28 @@
 #!/usr/bin/python2
+# coding: utf-8
 
-__version__ = "0.0.2"
+import BaseHTTPServer, select, socket, urlparse
+import time, datetime, sys, os
+import threading, ftplib, re
 
-import time, datetime, json
-import BaseHTTPServer, select, socket, SocketServer, urlparse
-import logging
-import logging.handlers
-import getopt
-import sys
-import os
-import signal
-import threading
-from types import FrameType, CodeType
-from time import sleep
-import ftplib
-import re
+from vitaproxy import constants
+from vitaproxy import config
+from vitaproxy.config import CONF
+from vitaproxy import log
 
-HAVE_FALLOCATE = True
+fallocate = None
 try:
     import fallocate
 except ImportError as e:
-    HAVE_FALLOCATE = False
+    pass
 
-HAVE_SENDFILE = True
+sendfile = None
 try:
     from sendfile import sendfile
 except ImportError as e:
-    HAVE_SENDFILE = False
-
-DEFAULT_LOG_FILENAME = "proxy.log"
-
-class RangeError(Exception):
     pass
 
 msgMutex = threading.Lock()
-
-class Configure(dict):
-    def loadConfigure(self):
-        self['showSpeed'] = True
-        self['fixVitaPath'] = True
-        self['expertMode'] = False
-        self['downloadDIR'] = "psv/"
-        self['updateInterval'] = 2
-        self['bufSize'] = 1 * 1024 * 1024
-
-        try:
-            with open("settings.json", "rb") as f:
-                setting = json.load(f)
-                for e in setting:
-                    self[e] = setting[e]
-        except IOError as e:
-            pass
-
-    def __init__(self):
-        self.loadConfigure()
-
-CONF = Configure()
 
 class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     __base = BaseHTTPServer.BaseHTTPRequestHandler
@@ -63,7 +30,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     server_version = "Apache"
     rbufsize = 0                        # self.rfile Be unbuffered
-
     def handle(self):
         (ip, port) =  self.client_address
         if hasattr(self, 'allowed_clients') and ip not in self.allowed_clients:
@@ -189,6 +155,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                 self.log_debug("%s: %s", h, self.headers[h])
         try:
             file_length = self.getFileLength(replace_fn)
+	    self.log_debug("file_length: %d", file_length)
             start, end = 0, file_length - 1
             lastModString = os.path.getmtime(replace_fn)
             lastModString = datetime.datetime.utcfromtimestamp(lastModString)
@@ -226,7 +193,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.log_debug("Range: from %d to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
-            if HAVE_FALLOCATE:
+            if fallocate:
+		log.debug("posix_fadvise: start from %d bytes, %d bytes length", start, end - start)
                 fallocate.posix_fadvise(fd, start, end - start, fallocate.POSIX_FADV_SEQUENTIAL | fallocate.POSIX_FADV_WILLNEED)
             self._file_read_write(fd, start, end)
 
@@ -314,8 +282,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                         ftp.retrbinary ("RETR %s"%path, self.connection.send)
                     ftp.quit ()
                 except Exception, e:
-                    self.server.logger.log (logging.WARNING, "FTP Exception: %s",
-                                            e)
+                    log.warning("FTP Exception: %s", e)
         finally:
             soc.close()
             self.connection.close()
@@ -330,7 +297,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         fd.seek(offset)
 
         while True:
-            if HAVE_SENDFILE:
+            if sendfile:
                 try:
                     sent = sendfile(self.connection.fileno(), fd.fileno(), offset, CONF['bufSize'])
                 except Exception as e:
@@ -394,213 +361,19 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     do_PUT  = do_GET
     do_DELETE=do_GET
 
-    def log_message (self, format, *args):
+    def log_message(self, format, *args):
         msgMutex.acquire()
-        self.server.logger.log (logging.INFO, "%s", format % args)
+        log.info("%s", format % args)
         msgMutex.release()
         
-    def log_error (self, format, *args):
+    def log_error(self, format, *args):
         msgMutex.acquire()
-        self.server.logger.log (logging.ERROR, "%s", format % args)
+        log.error("%s", format % args)
         msgMutex.release()
 
     def log_debug (self, format, *args):
         msgMutex.acquire()
-        self.server.logger.log (logging.DEBUG, "%s", format % args)
+        log.debug("%s", format % args)
         msgMutex.release()
 
-class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
-                           BaseHTTPServer.HTTPServer):
-    def __init__ (self, server_address, RequestHandlerClass, logger=None, cache_list = "cache.txt"):
-        BaseHTTPServer.HTTPServer.__init__ (self, server_address,
-                                            RequestHandlerClass)
-        self.logger = logger
-        self.replace_list = []
-        self.load_cache_list(cache_list)
-
-    def load_cache_list(self, fn):
-        try:
-            with open(fn, "r") as f:
-                for l in f:
-                    l = l.decode(errors='ignore').strip()
-
-                    if not l or l[0] == '#':
-                        continue
-
-                    if '->' in l:
-                        url, fn = l.split('->')
-                    else:
-                        url = l
-
-                        if url.rfind('?') > url.rfind('/'):
-                            fn = url[url.rfind('/')+1:url.rfind('?')]
-                        else:
-                            fn = url[url.rfind('/')+1:]
-
-                    if not fn:
-                        continue
-
-                    try:
-                        open(fn).close()
-                        self.replace_list.append([url, fn])
-                    except IOError as e:
-                        pass
-
-            self.logger.log(logging.INFO, "%d local caches loaded" % (len(self.replace_list)))
-        except IOError as e:
-            pass
-
-def logSetup (filename, log_size, daemon):
-    logger = logging.getLogger ("VitaProxy")
-    logger.setLevel (logging.DEBUG)
-    if not filename:
-        if not daemon:
-            # display to the screen
-            handler = logging.StreamHandler ()
-        else:
-            handler = logging.handlers.RotatingFileHandler (DEFAULT_LOG_FILENAME,
-                                                            maxBytes=(log_size*(1<<20)),
-                                                            backupCount=5)
-    else:
-        handler = logging.handlers.RotatingFileHandler (filename,
-                                                        maxBytes=(log_size*(1<<20)),
-                                                        backupCount=5)
-    """
-    fmt = logging.Formatter ("[%(asctime)-12s.%(msecs)03d] "
-                             "%(levelname)-8s {%(name)s %(threadName)s}"
-                             " %(message)s",
-                             "%Y-%m-%d %H:%M:%S")
-    """
-    fmt = logging.Formatter ("%(message)s")
-    handler.setFormatter (fmt)
-        
-    logger.addHandler (handler)
-    return logger
-
-def usage (msg=None):
-    if msg: print msg
-    print sys.argv[0], "[-p port] [-l logfile] [-c cachelist] [-dh] [allowed_client_name ...]]"
-    print
-    print "   -p       - Port to bind to"
-    print "   -l       - Path to logfile. If not specified, STDOUT is used"
-    print "   -c       - Load cache list"
-    print "   -d       - Run in the background"
-    print
-
-def handler (signo, frame):
-    while frame and isinstance (frame, FrameType):
-        if frame.f_code and isinstance (frame.f_code, CodeType):
-            if "run_event" in frame.f_code.co_varnames:
-                frame.f_locals["run_event"].set ()
-                return
-        frame = frame.f_back
-    
-def daemonize (logger):
-    class DevNull (object):
-        def __init__ (self): self.fd = os.open ("/dev/null", os.O_WRONLY)
-        def write (self, *args, **kwargs): return 0
-        def read (self, *args, **kwargs): return 0
-        def fileno (self): return self.fd
-        def close (self): os.close (self.fd)
-    class ErrorLog:
-        def __init__ (self, obj): self.obj = obj
-        def write (self, string): self.obj.log (logging.ERROR, string)
-        def read (self, *args, **kwargs): return 0
-        def close (self): pass
-        
-    if os.fork () != 0:
-        ## allow the child pid to instanciate the server
-        ## class
-        sleep (1)
-        sys.exit (0)
-    os.setsid ()
-    fd = os.open ('/dev/null', os.O_RDONLY)
-    if fd != 0:
-        os.dup2 (fd, 0)
-        os.close (fd)
-    null = DevNull ()
-    log = ErrorLog (logger)
-    sys.stdout = null
-    sys.stderr = log
-    sys.stdin = null
-    fd = os.open ('/dev/null', os.O_WRONLY)
-    #if fd != 1: os.dup2 (fd, 1)
-    os.dup2 (sys.stdout.fileno (), 1)
-    if fd != 2: os.dup2 (fd, 2)
-    if fd not in (1, 2): os.close (fd)
-
-def main ():
-    logfile = None
-    daemon  = False
-    max_log_size = 20
-    port = 8080
-    allowed = []
-    run_event = threading.Event ()
-    cache_list = "cache.txt"
-    
-    try: opts, args = getopt.getopt (sys.argv[1:], "l:c:dhp:", [])
-    except getopt.GetoptError, e:
-        usage (str (e))
-        return 1
-
-    for opt, value in opts:
-        if opt == "-p": port = int (value)
-        if opt == "-l": logfile = value
-        if opt == "-d": daemon = not daemon
-        if opt == "-c": cache_list = value
-        if opt == "-h":
-            usage ()
-            return 0
-        
-    # setup the log file
-    logger = logSetup (logfile, max_log_size, daemon)
-    
-    if daemon:
-        daemonize (logger)
-    signal.signal (signal.SIGINT, handler)
-        
-    if args:
-        allowed = []
-        for name in args:
-            client = socket.gethostbyname(name)
-            allowed.append(client)
-            logger.log (logging.INFO, "Accept: %s (%s)" % (client, name))
-        ProxyHandler.allowed_clients = allowed
-    else:
-        logger.log (logging.INFO, "Any clients will be served...")
-
-    server_address = ("0.0.0.0", port)
-    ProxyHandler.protocol_version = "HTTP/1.1"
-
-    try:
-        os.chdir(os.path.dirname(cache_list))
-    except OSError as e:
-        pass
-
-    httpd = ThreadingHTTPServer (server_address, ProxyHandler, logger, cache_list)
-    sa = httpd.socket.getsockname ()
-    print "Servering HTTP on", sa[0], "port", sa[1]
-    req_count = 0
-    while not run_event.isSet ():
-        try:
-            httpd.handle_request ()
-            req_count += 1
-            if req_count == 1000:
-                logger.log (logging.INFO, "Number of active threads: %s",
-                            threading.activeCount ())
-                req_count = 0
-        except select.error, e:
-            if e[0] == 4 and run_event.isSet (): pass
-            else:
-                logger.log (logging.CRITICAL, "Errno: %d - %s", e[0], e[1])
-        except socket.error as e:
-            if e.errno == 10054:
-                print ("Connection reset by peer")
-            else:
-                print (str(e))
-                
-    logger.log (logging.INFO, "Server shutdown")
-    return 0
-
-if __name__ == '__main__':
-    sys.exit (main ())
+# vim: set tabstop=4 sw=4 expandtab:
