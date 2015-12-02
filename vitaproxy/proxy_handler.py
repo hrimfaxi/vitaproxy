@@ -22,7 +22,6 @@ try:
 except ImportError as e:
     pass
 
-msgMutex = threading.Lock()
 
 class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     __base = BaseHTTPServer.BaseHTTPRequestHandler
@@ -84,7 +83,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
             self.path = self.path[last_http:]
 
     def do_CONNECT(self):
-        self.log_message("CONNECT %s", self.path)
+        log.info("CONNECT %s", self.path)
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
@@ -150,12 +149,12 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         return range_start, range_end
 
     def getLocalCache(self, replace_fn, head_only):
-        self.log_message("cache: %s -> %s", self.path, replace_fn)
+        log.info("cache redirected from %s to %s", self.path, replace_fn)
         for h in self.headers:
-                self.log_debug("%s: %s", h, self.headers[h])
+                log.debug("    %s: %s", h, self.headers[h])
         try:
             file_length = self.getFileLength(replace_fn)
-	    self.log_debug("file_length: %d", file_length)
+            log.debug("file length: %d bytes", file_length)
             start, end = 0, file_length - 1
             lastModString = os.path.getmtime(replace_fn)
             lastModString = datetime.datetime.utcfromtimestamp(lastModString)
@@ -190,7 +189,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         if head_only:
             return
 
-        self.log_debug("Range: from %d to %d", start, end)
+        log.debug("Range: from %u to %d", start, end)
 
         with open(replace_fn, "rb") as fd:
             if fallocate:
@@ -220,7 +219,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.fixPSVBrokenPath()
 
         if CONF['expertMode'] or self.isPKGorPUPFile:
-            self.log_message("%s", self.path)
+            log.info("%s", self.path)
 
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
 
@@ -362,18 +361,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     do_DELETE=do_GET
 
     def log_message(self, format, *args):
-        msgMutex.acquire()
-        log.info("%s", format % args)
-        msgMutex.release()
-        
-    def log_error(self, format, *args):
-        msgMutex.acquire()
-        log.error("%s", format % args)
-        msgMutex.release()
-
-    def log_debug (self, format, *args):
-        msgMutex.acquire()
-        log.debug("%s", format % args)
-        msgMutex.release()
+        log.info(format, *args)
 
 # vim: set tabstop=4 sw=4 expandtab:

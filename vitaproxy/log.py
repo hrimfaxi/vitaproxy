@@ -1,11 +1,15 @@
 #!/usr/bin/python2
 # coding: utf-8
 
-import logging
+import logging, threading
 from logging import DEBUG, INFO, WARNING, ERROR
+from functools import wraps
 
 from vitaproxy import constants
 from vitaproxy.config import CONF
+
+" 日志多线程锁 "
+_msg_mtx = threading.Lock()
 
 def init_logger():
     logger = logging.getLogger(constants.PROG_NAME)
@@ -20,10 +24,19 @@ def init_logger():
 
 _logger = init_logger()
 
-debug = _logger.debug
-info = _logger.info
-warning = _logger.warning
-error = _logger.error
-setLevel = _logger.setLevel
+def use_mutex(fn):
+    @wraps(fn)
+    def callit(*args, **kwargs):
+        with _msg_mtx:
+            return fn(*args, **kwargs)
+    return callit
+
+debug, info, warning, error, setlevel = map(use_mutex, [
+_logger.debug,
+_logger.info,
+_logger.warning,
+_logger.error,
+_logger.setLevel,
+])
 
 # vim: set tabstop=4 sw=4 expandtab:
