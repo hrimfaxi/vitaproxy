@@ -228,9 +228,6 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.close_connection = 1
         self.fixPSVBrokenPath()
 
-        if CONF['expertMode'] or self.isPKGorPUPFile:
-            log.info("%s", self.path)
-
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
 
         if not path:
@@ -330,9 +327,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
                     if delta >= CONF['updateInterval'] or rest == 0:
                         speed = (tm_b[1] - tm_a[1]) / delta
-                        log.info("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes"
-                                 % (speed / 1000, offset - start, rest))
-                        log.info("ETA: %d seconds" % (rest / speed))
+                        log.info("Speed: %.2fKB/S, Transfered: %d bytes, Remaining: %d bytes, ETA %d seconds"
+                                 % (speed / 1000, offset - start, rest, rest / speed))
                         tm_a = tm_b
         except Exception as e:
             log.error("Connection dropped, %d bytes sent", offset - start)

@@ -7,7 +7,6 @@ from vitaproxy import constants
 CONF = {
     'showSpeed': True,
     'fixVitaPath' : True,
-    'expertMode' : False,
     'downloadDIR' : constants.DOWNLOADDIR_PATH,
     'updateInterval' : 2,
     'bufSize' : 1 * 1024 * 1024,
