@@ -2,7 +2,7 @@
 # coding: utf-8
 
 import BaseHTTPServer, select, socket, SocketServer
-import threading
+import os.path, threading
 
 from types import FrameType, CodeType
 from time import sleep
@@ -43,6 +43,10 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                     if not fn:
                         continue
 
+                    " fn如为相对路径名应加上下载目录路径 "
+                    if not os.path.isabs(fn):
+                        fn = os.path.join(CONF['downloadDIR'], fn)
+
                     try:
                         open(fn).close()
                         self.replace_list.append([url, fn])
@@ -50,6 +54,8 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
                         pass
 
             log.info("%d local caches loaded" % (len(self.replace_list)))
+            log.debug("Dumping cache list:")
+            log.debug(self.replace_list)
         except IOError as e:
             pass
 
