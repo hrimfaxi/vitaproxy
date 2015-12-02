@@ -22,6 +22,13 @@ class ThreadingHTTPServer (SocketServer.ThreadingMixIn,
         self.load_cache_list(cache_list)
 
     def load_cache_list(self, fn):
+        if not os.path.exists(fn):
+            with open(fn, "w") as f:
+                f.write("# format in cache.txt:\n\n")
+                f.write("# replace_url->replace_file_path\n")
+                f.write("# search:replace_filename->replace_file_path\n")
+                f.write("# re:replace_url_regular_expression->replace_file_path\n\n")
+                f.write("# if replace_file_path is relative then it will be lookup from download directory\n")
         try:
             with open(fn, "r") as f:
                 for l in f:
