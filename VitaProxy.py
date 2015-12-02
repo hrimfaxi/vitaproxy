@@ -227,7 +227,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
         with open(replace_fn, "rb") as fd:
             if HAVE_FALLOCATE:
-                fallocate.posix_fadvise(fd, 0, 0, fallocate.POSIX_FADV_SEQUENTIAL)
+                fallocate.posix_fadvise(fd, start, end - start, fallocate.POSIX_FADV_SEQUENTIAL | fallocate.POSIX_FADV_WILLNEED)
             self._file_read_write(fd, start, end)
 
     def isPKGorPUPFile(self, path):
