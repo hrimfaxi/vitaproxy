@@ -230,6 +230,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
         self.close_connection = 1
         self.fixPSVBrokenPath()
 
+        log.info("GET %s", self.path)
+
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse(self.path, 'http')
 
         if not path:
