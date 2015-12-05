@@ -368,11 +368,17 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
     do_PUT  = do_GET
     do_DELETE=do_GET
 
-    base = BaseHTTPServer.BaseHTTPRequestHandler
-
     def send_header(self, keyword, value):
         log.debug("    %s: %s", keyword, value)
-        ProxyHandler.base.send_header(self, keyword, value)
+        ProxyHandler.__base.send_header(self, keyword, value)
+
+    def log_request(self, code='-', size='-'):
+        if code != 400:
+            ProxyHandler.__base.log_request(self, code, size)
+
+    def log_error(self, format, *args):
+        if args[0] != 400:
+            ProxyHandler.__base.log_error(self, format, *args)
 
     def log_message(self, format, *args):
         log.info(format, *args)
