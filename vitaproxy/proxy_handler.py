@@ -99,6 +99,8 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                     self.send_response(200, "OK")
                     self.end_headers()
                     self._read_write(soc, 300)
+        except Exception as e:
+            log.error("Connection dropped, reason: %s", str(e))
         finally:
             soc.close()
             self.connection.close()
@@ -285,14 +287,13 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
                     except ValueError: user, passwd = "anonymous", None
                 else: user, passwd ="anonymous", None
 
-                try:
-                    ftp = ftplib.FTP (netloc)
-                    ftp.login (user, passwd)
-                    if self.command == "GET":
-                        ftp.retrbinary ("RETR %s"%path, self.connection.send)
-                    ftp.quit ()
-                except Exception, e:
-                    log.error("FTP Exception, reason: %s", str(e))
+                ftp = ftplib.FTP (netloc)
+                ftp.login (user, passwd)
+                if self.command == "GET":
+                    ftp.retrbinary ("RETR %s"%path, self.connection.send)
+                ftp.quit ()
+        except Exception as e:
+            log.error("Connection dropped, reason: %s", str(e))
         finally:
             soc.close()
             self.connection.close()
