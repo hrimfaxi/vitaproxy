@@ -10,7 +10,7 @@ from vitaproxy import config
 from vitaproxy.config import CONF
 from vitaproxy import log
 
-SENDFILE_MAXSIZE = 2147483647L
+SENDFILE_MAXSIZE = 256 * 1024 * 1024
 
 fallocate = None
 try:
