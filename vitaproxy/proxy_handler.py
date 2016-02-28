@@ -15,14 +15,16 @@ SENDFILE_MAXSIZE = 256 * 1024 * 1024
 fallocate = None
 try:
     import fallocate
+    log.info("posix_fadvise enabled.")
 except ImportError as e:
-    pass
+    log.info("fallocate not found. Install fallocate to use posix_fadvise")
 
 sendfile = None
 try:
     from sendfile import sendfile
+    log.info("sendfile enabled.")
 except ImportError as e:
-    pass
+    log.info("pysendfile not found. Install pysendfile to use sendfile")
 
 class RangeError(RuntimeError):
     pass
