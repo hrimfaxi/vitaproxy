@@ -14,6 +14,7 @@ CONF = {
     'cache' : constants.CACHES_PATH,
     'httpsProxy' : '',
     'logLevel' : 'debug',
+    'log_filename' : 'vitaproxy.log',
 }
 
 def load_configure():

@@ -38,6 +38,7 @@ def main():
     parse_arguments(sys.argv)
 
     log.init_logger()
+    log.init_filelog()
 
     log.debug("Dumping configure")
     log.debug(CONF)

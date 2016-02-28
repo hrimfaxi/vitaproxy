@@ -11,6 +11,22 @@ from vitaproxy.config import CONF
 " 日志多线程锁 "
 _msg_mtx = threading.Lock()
 
+_filelog = None
+toFile = None
+
+def init_filelog():
+    global _filelog, toFile
+    _filelog = logging.getLogger(constants.PROG_NAME + "_filelogger")
+    _filelog.setLevel(logging.INFO)
+    fh = logging.FileHandler(CONF['log_filename'])
+    _logger.info("Log filename: %s", CONF['log_filename'])
+    fh.setLevel(logging.INFO)
+    FORMAT = logging.Formatter('%(asctime)-15s %(levelname)s: %(message)s')
+    fh.setFormatter(FORMAT)
+    _filelog.handlers = []
+    _filelog.addHandler(fh)
+    toFile = use_mutex(_filelog.info)
+
 def init_logger():
     logger = logging.getLogger(constants.PROG_NAME)
 

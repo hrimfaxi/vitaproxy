@@ -222,6 +222,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler):
 
     def tryDownloadPath(self, path, head_only):
         if self.isPKGorPUPFile(path):
+            log.toFile(path)
             localpath = os.path.join(CONF['downloadDIR'], os.path.basename(path).split('?')[0])
             if os.path.exists(localpath):
                 self.getLocalCache(localpath, head_only)
