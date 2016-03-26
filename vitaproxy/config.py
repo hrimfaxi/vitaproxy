@@ -26,7 +26,7 @@ def load_configure():
 
 def save_configure():
     try:
-        os.mkdir(constants.get_config_directory())
+        os.makedirs(constants.get_config_directory())
     except OSError:
         pass
     with open(constants.SETTINGS_PATH, "wb") as f:
